@@ -5,7 +5,6 @@ WORKDIR /workspace
 
 # Copy go mod files
 COPY go.mod go.mod
-COPY go.sum go.sum
 
 # Download dependencies
 RUN go mod download
