@@ -52,7 +52,7 @@ pipeline {
                     # apt-get update -y && apt-get install docker.io -y
 
                     # build the docker image
-                    # docker build -t ${DOCKER_REGISTRY}/${IMAGE_NAME} .
+                    docker build -t ${DOCKER_REGISTRY}/${IMAGE_NAME} .
                 '''
 
                 // login the Docker Hub
