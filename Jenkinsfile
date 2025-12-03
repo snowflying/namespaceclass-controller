@@ -78,7 +78,7 @@ pipeline {
                     # mv kubectl /usr/local/bin/
                 '''
                 withCredentials([file(credentialsId: 'dev-kubeconfig', variable: 'KUBECONFIG')]) {
-                    sh 'kubectl apply -f deployment/nsc-controller.yaml'
+                    sh 'kubectl apply -f config/deployment/*'
                 }
             }
         }

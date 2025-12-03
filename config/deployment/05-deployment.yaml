@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: namespaceclass-controller
+  namespace: namespaceclass-system
+  labels:
+    app: namespaceclass-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: namespaceclass-controller
+  template:
+    metadata:
+      labels:
+        app: namespaceclass-controller
+    spec:
+      serviceAccountName: namespaceclass-controller
+      automountServiceAccountToken: true
+      containers:
+      - name: controller
+        image: namespaceclass-controller:v1
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+      imagePullSecrets:
+        - name: XXX

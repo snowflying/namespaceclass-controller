@@ -1,0 +1,21 @@
+apiVersion: snowflying.io/v1alpha1
+kind: NamespaceClass
+metadata:
+  name: internal-network
+spec:
+  resources:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: network-config
+    data:
+      network-type: "internal"
+      vpn-required: "true"
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: vpn-credentials
+    type: Opaque
+    stringData:
+      username: "admin"
+      password: "changeme"
