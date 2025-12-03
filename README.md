@@ -318,4 +318,4 @@ Apache License 2.0
 
 ## Contact
 
-For questions or issues, please open a GitHub issue.# namespaceclass-controller
+For questions or issues, please open a GitHub issue.
