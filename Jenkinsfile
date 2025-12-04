@@ -89,4 +89,14 @@ pipeline {
             }
         }
     }
+
+    post {
+        success {
+            echo "Pipeline completed successfully! Image: ${DOCKER_REGISTRY}/${IMAGE_NAME}"
+        }
+        failure {
+            echo "Pipeline failed. Check logs for details."
+        }
+    }
+
 }
