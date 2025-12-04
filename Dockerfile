@@ -14,7 +14,10 @@ RUN go mod download
 COPY main.go main.go
 
 # Build
-RUN "CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o controller main.go"
+RUN CGO_ENABLED=0 \
+    GOOS=linux \
+    GOARCH=amd64 \
+    go build -a -o controller main.go
 
 # Runtime stage
 FROM gcr.io/distroless/static:nonroot
