@@ -29,4 +29,4 @@ spec:
             cpu: 500m
             memory: 256Mi
       imagePullSecrets:
-        - name: XXX
+        - name: mywebapp-dockerhub
