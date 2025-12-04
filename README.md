@@ -244,7 +244,7 @@ spec:
 
 ```bash
 # Run the controller locally (outside cluster)
-make sure you have the kubeconfig 'config' file under your .kube in home folder
+# make sure you have the kubeconfig 'config' file under your .kube in home folder
 go run main.go
 ```
 

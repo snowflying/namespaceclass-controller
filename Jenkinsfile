@@ -12,7 +12,7 @@ pipeline {
         GO111MODULE = "on"
         GOPROXY = "https://proxy.golang.org"
         DOCKER_REGISTRY = 'alizeedocker'
-        IMAGE_NAME = 'nsc-controller:v1'
+        IMAGE_NAME = 'namespaceclass-controller:v1'
     }
 
     stages {
