@@ -2,7 +2,7 @@ pipeline {
     agent {
        docker {
            image 'alizeedocker/tool:v1'
-           label 'vm03-dockeragent'
+           label 'vm02-dockeragent'
            args '-v /var/run/docker.sock:/var/run/docker.sock'
        }
     }
