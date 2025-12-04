@@ -19,7 +19,7 @@ spec:
       automountServiceAccountToken: true
       containers:
       - name: controller
-        image: namespaceclass-controller:v1
+        image: alizeedocker/namespaceclass-controller:v1
         imagePullPolicy: IfNotPresent
         resources:
           requests:
