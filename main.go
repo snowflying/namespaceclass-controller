@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -25,8 +26,11 @@ const (
 )
 
 type Controller struct {
-	client        *kubernetes.Clientset
-	dynamicClient dynamic.Interface
+	client          *kubernetes.Clientset
+	dynamicClient   dynamic.Interface
+	discoveryClient discovery.DiscoveryInterface
+	namespacedGVRs  []schema.GroupVersionResource
+	gvkToGVR        map[schema.GroupVersionKind]schema.GroupVersionResource
 }
 
 func NewController(config *rest.Config) (*Controller, error) {
@@ -44,10 +48,26 @@ func NewController(config *rest.Config) (*Controller, error) {
 	}
 	log.Println("[INIT] Dynamic client created successfully")
 
-	return &Controller{
-		client:        client,
-		dynamicClient: dynamicClient,
-	}, nil
+	log.Println("[INIT] Creating discovery client...")
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	log.Println("[INIT] Discovery client created successfully")
+
+	controller := &Controller{
+		client:          client,
+		dynamicClient:   dynamicClient,
+		discoveryClient: discoveryClient,
+	}
+
+	log.Println("[INIT] Discovering namespace-scoped resources...")
+	if err := controller.discoverNamespacedResources(); err != nil {
+		return nil, err
+	}
+	log.Printf("[INIT] Found %d namespace-scoped resource types", len(controller.namespacedGVRs))
+
+	return controller, nil
 }
 
 func (c *Controller) Run(ctx context.Context) error {
@@ -247,28 +267,17 @@ func (c *Controller) createResource(ctx context.Context, nsName, className strin
 	resource.SetLabels(labels)
 
 	gvk := resource.GroupVersionKind()
-	gvr := schema.GroupVersionResource{
-		Group:    gvk.Group,
-		Version:  gvk.Version,
-		Resource: kindToResource(gvk.Kind),
+	
+	gvr, err := c.gvkToGVR[gvk]
+	if !err {
+		return fmt.Errorf("unknown resource type: %s/%s Kind=%s", gvk.Group, gvk.Version, gvk.Kind)
 	}
 
-	_, err := c.dynamicClient.Resource(gvr).Namespace(nsName).Create(ctx, &resource, metav1.CreateOptions{})
-	return err
+	_, createErr := c.dynamicClient.Resource(gvr).Namespace(nsName).Create(ctx, &resource, metav1.CreateOptions{})
+	return createErr
 }
 
 func (c *Controller) cleanupResources(ctx context.Context, nsName, className string) {
-	resourceTypes := []schema.GroupVersionResource{
-		{Version: "v1", Resource: "configmaps"},
-		{Version: "v1", Resource: "secrets"},
-		{Version: "v1", Resource: "serviceaccounts"},
-		{Group: "networking.k8s.io", Version: "v1", Resource: "networkpolicies"},
-		{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "roles"},
-		{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "rolebindings"},
-		{Version: "v1", Resource: "resourcequotas"},
-		{Version: "v1", Resource: "limitranges"},
-	}
-
 	selector := fmt.Sprintf("%s=true", ManagedLabel)
 	if className != "" {
 		selector = fmt.Sprintf("%s,%s=%s", selector, OwnerClassLabel, className)
@@ -276,7 +285,9 @@ func (c *Controller) cleanupResources(ctx context.Context, nsName, className str
 
 	deletedCount := 0
 
-	for _, gvr := range resourceTypes {
+	log.Printf("[CLEANUP] Scanning %d resource types...", len(c.namespacedGVRs))
+
+	for _, gvr := range c.namespacedGVRs {
 		list, err := c.dynamicClient.Resource(gvr).Namespace(nsName).List(ctx, metav1.ListOptions{
 			LabelSelector: selector,
 		})
@@ -285,7 +296,7 @@ func (c *Controller) cleanupResources(ctx context.Context, nsName, className str
 		}
 
 		for _, item := range list.Items {
-			log.Printf("[CLEANUP] Deleting %s: %s", gvr.Resource, item.GetName())
+			log.Printf("[CLEANUP] Deleting %s/%s: %s", gvr.Group, gvr.Resource, item.GetName())
 			err := c.dynamicClient.Resource(gvr).Namespace(nsName).Delete(ctx, item.GetName(), metav1.DeleteOptions{})
 			if err != nil {
 				log.Printf("[ERROR] Failed to delete: %v", err)
@@ -357,29 +368,65 @@ func (c *Controller) cleanupNamespacesWithClass(ctx context.Context, className s
 	}
 }
 
-func kindToResource(kind string) string {
-	switch kind {
-	case "ConfigMap":
-		return "configmaps"
-	case "Secret":
-		return "secrets"
-	case "ServiceAccount":
-		return "serviceaccounts"
-	case "NetworkPolicy":
-		return "networkpolicies"
-	case "Role":
-		return "roles"
-	case "RoleBinding":
-		return "rolebindings"
-	case "ResourceQuota":
-		return "resourcequotas"
-	case "LimitRange":
-		return "limitranges"
-	case "Endpoints":
-		return "endpoints"
-	default:
-		return fmt.Sprintf("%ss", kind)
+func (c *Controller) discoverNamespacedResources() error {
+	log.Println("[DISCOVERY] Fetching API resource list...")
+	
+	apiResourceLists, err := c.discoveryClient.ServerPreferredResources()
+	if err != nil {
+		log.Printf("[WARN] Error discovering resources (continuing with partial list): %v", err)
 	}
+
+	var namespacedGVRs []schema.GroupVersionResource
+	gvkToGVR := make(map[schema.GroupVersionKind]schema.GroupVersionResource)
+
+	for _, apiResourceList := range apiResourceLists {
+		gv, err := schema.ParseGroupVersion(apiResourceList.GroupVersion)
+		if err != nil {
+			log.Printf("[WARN] Failed to parse GroupVersion %s: %v", apiResourceList.GroupVersion, err)
+			continue
+		}
+
+		for _, apiResource := range apiResourceList.APIResources {
+			if !apiResource.Namespaced {
+				continue
+			}
+
+			if !contains(apiResource.Verbs, "list") || !contains(apiResource.Verbs, "delete") {
+				continue
+			}
+
+			gvr := schema.GroupVersionResource{
+				Group:    gv.Group,
+				Version:  gv.Version,
+				Resource: apiResource.Name,
+			}
+
+			gvk := schema.GroupVersionKind{
+				Group:   gv.Group,
+				Version: gv.Version,
+				Kind:    apiResource.Kind,
+			}
+
+			namespacedGVRs = append(namespacedGVRs, gvr)
+			gvkToGVR[gvk] = gvr
+			
+			log.Printf("[DISCOVERY] Found: %s/%s/%s (Kind: %s)", gvr.Group, gvr.Version, gvr.Resource, apiResource.Kind)
+		}
+	}
+
+	c.namespacedGVRs = namespacedGVRs
+	c.gvkToGVR = gvkToGVR
+	
+	return nil
+}
+
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
 }
 
 func getKubeConfig() (*rest.Config, error) {
