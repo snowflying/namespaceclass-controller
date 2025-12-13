@@ -1,0 +1,52 @@
+apiVersion: snowflying.io/v1alpha1
+kind: NamespaceClass
+metadata:
+  name: mutiple-tenant-isolation
+spec:
+  resources:
+  - apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: ingress-egress-policy
+      namespace: $$
+    spec:
+      podSelector: {}
+      policyTypes:
+      - Ingress
+      - Engress
+      ingress:
+      - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: $$
+      egress:
+      - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: $$
+      - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+        ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+      - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+        ports:
+        - protocol: TCP
+          port: 443
+      - to:
+        - namespaceSelector: {}
+        ports:
+        - protocol: TCP
+          port: 443
+        - rotocol: TCP
+          port: 80
